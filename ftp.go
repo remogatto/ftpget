@@ -1,4 +1,4 @@
-package ftpget
+package ftp
 
 import (
 	"net"
@@ -164,19 +164,14 @@ func Get(url string, dst string) os.Error {
 
 	commandCh <- &command{conn, response, "connect", 220}
 	<-response
-
 	commandCh <- &command{conn, response, "USER anonymous", 331}
 	<-response
-
 	commandCh <- &command{conn, response, "PASS ftpget@-", 230}
 	<-response
-
 	commandCh <- &command{conn, response, "CWD "+parsedURL.path, 250}
 	<-response
-
 	commandCh <- &command{conn, response, "TYPE I", 200}
 	<-response
-
 	commandCh <- &command{conn, response, "PASV", 227}
 	retrAddr, _ := getIpPort((<-response).message)
 

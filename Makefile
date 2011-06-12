@@ -1,7 +1,7 @@
 include $(GOROOT)/src/Make.inc
 
-TARG=ftpget
-GOFILES=ftpget.go
+TARG=ftp
+GOFILES=ftp.go
 
 include $(GOROOT)/src/Make.pkg
 

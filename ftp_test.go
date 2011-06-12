@@ -1,4 +1,4 @@
-package ftpget
+package ftp
 
 import (
 	"testing"
