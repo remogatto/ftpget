@@ -33,7 +33,8 @@ func TestParseURL(t *testing.T) {
 func TestGet(t *testing.T) {
 	filename := "AlterEgo.tap.zip"
 	expectedSize := 13933
-	if err := Get("ftp.worldofspectrum.org/pub/sinclair/games/a/AlterEgo.tap.zip", filename); err != nil {
+	f, _ := os.Create(filename)
+	if err := Get("ftp.worldofspectrum.org/pub/sinclair/games/a/AlterEgo.tap.zip", f); err != nil {
 		t.Errorf("Get should not fail with %s", err)
 	}
 	if fileInfo, err := os.Stat(filename); err != nil {
@@ -46,10 +47,10 @@ func TestGet(t *testing.T) {
 }
 
 func TestErrorHandling(t *testing.T) {
-	if err := Get("doesntexist/pub/sinclair/games/a/b.tap.zip", "b.tap.zip"); err == nil {
+	if err := Get("doesntexist/pub/sinclair/games/a/b.tap.zip", nil); err == nil {
 		t.Error("Should fail")
 	}
-	if err := Get("ftp.worldofspectrum.org/pub/sinclair/games/a/b.tap.zip", "b.tap.zip"); err != nil {
+	if err := Get("ftp.worldofspectrum.org/pub/sinclair/games/a/b.tap.zip", nil); err != nil {
 		ftpErr := err.(*Error)
 		if ftpErr.Code != 550 {
 			t.Errorf("Error code should be 550 but is %d", ftpErr.Code)

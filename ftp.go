@@ -8,6 +8,7 @@ import (
 	"strings"
 	"strconv"
 	"log"
+	"io"
 	"bufio"
 	"regexp"
 	"path"
@@ -156,7 +157,6 @@ func requestLoop(ch chan *command) {
 		case command := <-ch:
 			if err = request(command); err != nil {
 				command.response <- &response{err: err}
-				// return
 			}
 		}
 	}
@@ -170,7 +170,7 @@ func connect(addr string) (net.Conn, os.Error) {
 	return conn, nil
 }
 
-func writeToFile(f *os.File, conn net.Conn) os.Error {
+func writeToFile(conn net.Conn, w io.Writer) os.Error {
 	// Buffer for downloading and writing to file
 	bufLen := 1024
 	buf := make([]byte, bufLen)
@@ -178,7 +178,7 @@ func writeToFile(f *os.File, conn net.Conn) os.Error {
 	for {
 		bytesRead, err := conn.Read(buf)
 		if bytesRead > 0 {
-			_, err := f.Write(buf[0:bytesRead])
+			_, err := w.Write(buf[0:bytesRead])
 			if err != nil {
 				return err
 			}
@@ -209,36 +209,13 @@ func sendCommand(conn net.Conn, commandCh chan *command, cmd string, code int) (
 	return r, nil
 }
 
-// Fetch a file from an FTP server.
-// url is the complete URL of the server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
-// dst is the destination path
-func Get(url string, dst string) os.Error {
-	var (
-		response *response
-		parsedURL *parsedURL = new(parsedURL)
-		conn      net.Conn
-		err       os.Error
-	)
-
-	commandCh := make(chan *command)
-	go requestLoop(commandCh)
-
-	if parsedURL, err = parseURL(url); err != nil {
-		return err
-	}
-
-	conn, err = connect(parsedURL.addr)
-	if err != nil {
-		return err
-	}
-
-	// Begin command sequence
-	if _, err = sendCommand(conn, commandCh, "connect", 220); err != nil { return err }
-	if _, err = sendCommand(conn, commandCh, "USER anonymous", 331); err != nil { return err }
-	if _, err = sendCommand(conn, commandCh, "PASS ftpget@-", 230); err != nil { return err }
-	if _, err = sendCommand(conn, commandCh, "CWD "+parsedURL.path, 250); err != nil { return err }
-	if _, err = sendCommand(conn, commandCh, "TYPE i", 200); err != nil { return err }
-	if response, err = sendCommand(conn, commandCh, "PASV", 227); err != nil { 
+func sendCommandSequence(conn net.Conn, commandCh chan *command, parsedURL *parsedURL, w io.Writer) os. Error {
+	if _, err := sendCommand(conn, commandCh, "connect", 220); err != nil { return err }
+	if _, err := sendCommand(conn, commandCh, "USER anonymous", 331); err != nil { return err }
+	if _, err := sendCommand(conn, commandCh, "PASS ftpget@-", 230); err != nil { return err }
+	if _, err := sendCommand(conn, commandCh, "CWD "+parsedURL.path, 250); err != nil { return err }
+	if _, err := sendCommand(conn, commandCh, "TYPE i", 200); err != nil { return err }
+	if response, err := sendCommand(conn, commandCh, "PASV", 227); err != nil { 
 		return err 
 	} else {
 		retrAddr, _ := getIpPort(response.message)
@@ -249,8 +226,27 @@ func Get(url string, dst string) os.Error {
 		if _, err = sendCommand(conn, commandCh, "RETR "+parsedURL.filename, 150); err != nil { 
 			return err
 		} else {
-			f, _ := os.Create(dst)
-			writeToFile(f, dataConn)
+			writeToFile(dataConn, w)
+		}
+	}
+	return nil
+}
+
+// Fetch a file from an FTP server.
+// url is the complete URL of the server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
+// w is an object that implements the io.Writer interface
+func Get(url string, w io.Writer) os.Error {
+	commandCh := make(chan *command)
+	go requestLoop(commandCh)
+	if parsedURL, err := parseURL(url); err != nil {
+		return err
+	} else {
+		if conn, err := connect(parsedURL.addr); err != nil {
+			return err
+		} else {
+			if err := sendCommandSequence(conn, commandCh, parsedURL, w); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
