@@ -31,6 +31,7 @@ func TestParseURL(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
+	Log = true
 	filename := "AlterEgo.tap.zip"
 	expectedSize := 13933
 	f, _ := os.Create(filename)
@@ -47,6 +48,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestErrorHandling(t *testing.T) {
+	Log = true
 	if err := Get("doesntexist/pub/sinclair/games/a/b.tap.zip", nil); err == nil {
 		t.Error("Should fail")
 	}

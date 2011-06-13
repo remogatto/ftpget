@@ -38,9 +38,13 @@ type response struct {
 
 type command struct {
 	conn     net.Conn
-	response chan *response
 	cmd      string
 	code     int
+	response *response
+}
+
+func (*command) newCommand(conn net.Conn, cmd string, code int) *command {
+	return &command{conn, cmd, code, new(response)}
 }
 
 func (response *response) String() string {
@@ -51,33 +55,34 @@ func (err *Error) String() string {
 	return fmt.Sprintf("[%03d] %s", err.Code, err.Message)
 }
 
-func parseResponse(r *bufio.Reader) (*response, os.Error) {
-	var err os.Error
-
-	multiline := false
-	raw, err := r.ReadString('\n')
-	if err != nil {
-		return nil, err
+func parseResponse(r *bufio.Reader) *response {
+	var (
+		code int
+		message string
+		raw string
+		multiline bool
+		err os.Error
+	)
+	if raw, err = r.ReadString('\n'); err != nil {
+		return &response{err: err}
+	} else {
+		if code, err = strconv.Atoi(raw[:3]); err != nil {
+ 			return &response{err: err}
+		} 
+		message = raw[4 : len(raw)-2]
+		if raw[3 : len(raw)-2][0] == '-' {
+			multiline = true
+		}
 	}
-	code, err := strconv.Atoi(raw[:3])
-	if err != nil {
-		return nil, err
-	}
-	message := raw[4 : len(raw)-2]
-	if raw[3 : len(raw)-2][0] == '-' {
-		multiline = true
-	}
-	return &response{code, message, raw, multiline, nil}, nil
+	return &response{code, message, raw, multiline, nil}
 }
 
 func parseURL(url string) (*parsedURL, os.Error) {
 	var (
 		urlWithScheme *http.URL
+		parsedURL *parsedURL = new(parsedURL)
 		err           os.Error
 	)
-
-	parsedURL := new(parsedURL)
-
 	if urlWithScheme, err = http.ParseURL("ftp://" + url); err != nil {
 		return nil, err
 	}
@@ -89,40 +94,38 @@ func parseURL(url string) (*parsedURL, os.Error) {
 	}
 	parsedURL.filename = path.Base(urlWithScheme.Path)
 	parsedURL.path = urlWithScheme.Path[:len(urlWithScheme.Path)-len(parsedURL.filename)]
-
 	return parsedURL, nil
 }
 
-func readResponse(conn net.Conn, responseCh chan *response, code int) os.Error {
+func readResponse(conn net.Conn, code int) *response {
+	var response *response
 	reader := bufio.NewReader(conn)
 	for {
-		response, err := parseResponse(reader)
-		if err != nil {
-			return err
-		}
-		if !response.multiline {
-			if response.code == code {
-				responseCh <- response
-				break
-			} else {
-				return &Error{response.code, response.message}
+		if response = parseResponse(reader); response.err != nil {
+			return response
+		} else {
+			if !response.multiline {
+				if response.code == code {
+					break
+				} else {
+					response.err = &Error{response.code, response.message}
+					return response
+				}
 			}
 		}
 	}
-	return nil
+	return response
 }
 
-func request(cmd *command) os.Error {
+func request(cmd *command) *response {
+	var err os.Error
 	if cmd.cmd != "connect" {
-		_, err := cmd.conn.Write([]byte(cmd.cmd + "\r\n"))
+		_, err = cmd.conn.Write([]byte(cmd.cmd + "\r\n"))
 		if err != nil {
-			return err
+			return &response{err: err}
 		}
 	}
-	if err := readResponse(cmd.conn, cmd.response, cmd.code); err != nil {
-		return err
-	}
-	return nil
+	return readResponse(cmd.conn, cmd.code)
 }
 
 func getIpPort(resp string) (addr string, err os.Error) {
@@ -145,20 +148,6 @@ func getIpPort(resp string) (addr string, err os.Error) {
 	return addr, nil
 }
 
-// A loop that continously listen to requests from the client
-// forwarding them to the FTP server through the tcp connection.
-func commandLoop(ch chan *command) {
-	var err os.Error
-	for err == nil {
-		select {
-		case command := <-ch:
-			if err = request(command); err != nil {
-				command.response <- &response{err: err}
-			}
-		}
-	}
-}
-
 func connect(addr string) (net.Conn, os.Error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -167,52 +156,30 @@ func connect(addr string) (net.Conn, os.Error) {
 	return conn, nil
 }
 
-func writeToFile(conn net.Conn, w io.Writer, done) os.Error {
-	// Buffer for downloading and writing to file
-	bufLen := 1024
-	buf := make([]byte, bufLen)
-	// Read from the server and write the contents to a file
-	for {
-		bytesRead, err := conn.Read(buf)
-		if bytesRead > 0 {
-			_, err := w.Write(buf[0:bytesRead])
-			if err != nil {
-				return err
-			}
-		}
-		if err == os.EOF {
-			break
-		}
-	}
-	return nil
-}
-
-func sendCommand(conn net.Conn, commandCh chan *command, cmd string, code int) (*response, os.Error) {
-	var r *response
-	responseCh := make(chan *response)
-	commandCh <- &command{conn, responseCh, cmd, code}
+func sendCommand(conn net.Conn, cmd string, code int) (*response, os.Error) {
+	response := request(&command{conn, cmd, code, nil})
 	if Log {
 		log.Printf("==> %s", cmd)
 	}
-	if r = <-responseCh; r.err != nil {
+	if response.err != nil {
 		if Log {
-			log.Printf("<== %s", r.err)
+			log.Printf("<== %s", response.err)
 		}
-		return nil, r.err
+		return nil, response.err
 	}
 	if Log {
-		log.Printf("<== %s", r)
+		log.Printf("<== %s", response)
 	}
-	return r, nil
+	return response, nil
 }
 
-func sendCommandSequence(conn net.Conn, commandCh chan *command, parsedURL *parsedURL, w io.Writer) os. Error {
-	if _, err := sendCommand(conn, commandCh, "connect", 220); err != nil { return err }
-	if _, err := sendCommand(conn, commandCh, "USER anonymous", 331); err != nil { return err }
-	if _, err := sendCommand(conn, commandCh, "PASS ftpget@-", 230); err != nil { return err }
-	if _, err := sendCommand(conn, commandCh, "CWD "+parsedURL.path, 250); err != nil { return err }
-	if _, err := sendCommand(conn, commandCh, "TYPE I", 200); err != nil { return err }
-	if response, err := sendCommand(conn, commandCh, "PASV", 227); err != nil { 
+func sendCommandSequence(conn net.Conn, parsedURL *parsedURL, w io.Writer) os. Error {
+	if _, err := sendCommand(conn, "connect", 220); err != nil { return err }
+	if _, err := sendCommand(conn, "USER anonymous", 331); err != nil { return err }
+	if _, err := sendCommand(conn, "PASS ftpget@-", 230); err != nil { return err }
+	if _, err := sendCommand(conn, "CWD "+parsedURL.path, 250); err != nil { return err }
+	if _, err := sendCommand(conn, "TYPE I", 200); err != nil { return err }
+	if response, err := sendCommand(conn, "PASV", 227); err != nil { 
 		return err 
 	} else {
 		retrAddr, _ := getIpPort(response.message)
@@ -220,10 +187,11 @@ func sendCommandSequence(conn net.Conn, commandCh chan *command, parsedURL *pars
 		if err != nil {
 			return err
 		}
-		if _, err = sendCommand(conn, commandCh, "RETR "+parsedURL.filename, 150); err != nil { 
+		if _, err = sendCommand(conn, "RETR "+parsedURL.filename, 150); err != nil { 
 			return err
 		} else {
-			writeToFile(dataConn, w)
+			_, err := io.Copy(w, dataConn)
+			return err
 		}
 	}
 	return nil
@@ -233,15 +201,13 @@ func sendCommandSequence(conn net.Conn, commandCh chan *command, parsedURL *pars
 // url is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
 func Get(url string, w io.Writer) os.Error {
-	commandCh := make(chan *command)
-	go commandLoop(commandCh)
 	if parsedURL, err := parseURL(url); err != nil {
 		return err
 	} else {
 		if conn, err := connect(parsedURL.addr); err != nil {
 			return err
 		} else {
-			if err := sendCommandSequence(conn, commandCh, parsedURL, w); err != nil {
+			if err := sendCommandSequence(conn, parsedURL, w); err != nil {
 				return err
 			}
 			conn.Close()
