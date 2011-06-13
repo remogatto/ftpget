@@ -42,6 +42,10 @@ type command struct {
 	code     int
 }
 
+func (response *response) String() string {
+	return fmt.Sprintf("[%03d] %s", response.code, response.message)
+}
+
 func (err *Error) String() string {
 	return fmt.Sprintf("[%03d] %s", err.Code, err.Message)
 }
@@ -94,9 +98,6 @@ func readResponse(conn net.Conn, responseCh chan *response, code int) os.Error {
 		response, err := parseResponse(reader)
 		if err != nil {
 			return err
-		}
-		if Log {
-			log.Print(response.raw)
 		}
 		if !response.multiline {
 			if response.code == code {
@@ -193,8 +194,17 @@ func sendCommand(conn net.Conn, commandCh chan *command, cmd string, code int) (
 	var r *response
 	responseCh := make(chan *response)
 	commandCh <- &command{conn, responseCh, cmd, code}
+	if Log {
+		log.Printf("==> %s", cmd)
+	}
 	if r = <-responseCh; r.err != nil {
+		if Log {
+			log.Printf("<== %s", r.err)
+		}
 		return nil, r.err
+	}
+	if Log {
+		log.Printf("<== %s", r)
 	}
 	return r, nil
 }
