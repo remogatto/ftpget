@@ -44,3 +44,13 @@ func TestGet(t *testing.T) {
 		os.Remove(filename)
 	}
 }
+
+func TestErrorHandling(t *testing.T) {
+	filename := "b.tap.zip"
+	if err := Get("ftp.worldofspectrum.org/pub/sinclair/games/a/b.tap.zip", filename); err != nil {
+		ftpErr := err.(*Error)
+		if ftpErr.Code != 550 {
+			t.Errorf("Error code should be 550 but is %d", ftpErr.Code)
+		}
+	}
+}
