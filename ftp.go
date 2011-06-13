@@ -136,21 +136,18 @@ func getIpPort(resp string) (addr string, err os.Error) {
 		msg := "Cannot handle server response: " + resp
 		return "", os.NewError(msg)
 	}
-
 	ip := strings.Replace(match[1], ",", ".", -1)
-
 	octets := strings.Split(match[2], ",", 2)
 	firstOctet, _ := strconv.Atoui(octets[0])
 	secondOctet, _ := strconv.Atoui(octets[1])
 	port := firstOctet*256 + secondOctet
 	addr = ip + ":" + strconv.Uitoa(port)
-
 	return addr, nil
 }
 
 // A loop that continously listen to requests from the client
 // forwarding them to the FTP server through the tcp connection.
-func requestLoop(ch chan *command) {
+func commandLoop(ch chan *command) {
 	var err os.Error
 	for err == nil {
 		select {
@@ -170,7 +167,7 @@ func connect(addr string) (net.Conn, os.Error) {
 	return conn, nil
 }
 
-func writeToFile(conn net.Conn, w io.Writer) os.Error {
+func writeToFile(conn net.Conn, w io.Writer, done) os.Error {
 	// Buffer for downloading and writing to file
 	bufLen := 1024
 	buf := make([]byte, bufLen)
@@ -214,7 +211,7 @@ func sendCommandSequence(conn net.Conn, commandCh chan *command, parsedURL *pars
 	if _, err := sendCommand(conn, commandCh, "USER anonymous", 331); err != nil { return err }
 	if _, err := sendCommand(conn, commandCh, "PASS ftpget@-", 230); err != nil { return err }
 	if _, err := sendCommand(conn, commandCh, "CWD "+parsedURL.path, 250); err != nil { return err }
-	if _, err := sendCommand(conn, commandCh, "TYPE i", 200); err != nil { return err }
+	if _, err := sendCommand(conn, commandCh, "TYPE I", 200); err != nil { return err }
 	if response, err := sendCommand(conn, commandCh, "PASV", 227); err != nil { 
 		return err 
 	} else {
@@ -233,11 +230,11 @@ func sendCommandSequence(conn net.Conn, commandCh chan *command, parsedURL *pars
 }
 
 // Fetch a file from an FTP server.
-// url is the complete URL of the server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
+// url is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
 func Get(url string, w io.Writer) os.Error {
 	commandCh := make(chan *command)
-	go requestLoop(commandCh)
+	go commandLoop(commandCh)
 	if parsedURL, err := parseURL(url); err != nil {
 		return err
 	} else {
@@ -247,6 +244,7 @@ func Get(url string, w io.Writer) os.Error {
 			if err := sendCommandSequence(conn, commandCh, parsedURL, w); err != nil {
 				return err
 			}
+			conn.Close()
 		}
 	}
 	return nil
