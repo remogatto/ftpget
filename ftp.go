@@ -209,6 +209,9 @@ func sendCommand(conn net.Conn, commandCh chan *command, cmd string, code int) (
 	return r, nil
 }
 
+// Fetch a file from an FTP server.
+// url is the complete URL of the server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
+// dst is the destination path
 func Get(url string, dst string) os.Error {
 	var (
 		response *response
@@ -229,7 +232,7 @@ func Get(url string, dst string) os.Error {
 		return err
 	}
 
-	// Begin commands' sequence
+	// Begin command sequence
 	if _, err = sendCommand(conn, commandCh, "connect", 220); err != nil { return err }
 	if _, err = sendCommand(conn, commandCh, "USER anonymous", 331); err != nil { return err }
 	if _, err = sendCommand(conn, commandCh, "PASS ftpget@-", 230); err != nil { return err }
