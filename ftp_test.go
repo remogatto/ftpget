@@ -31,7 +31,6 @@ func TestParseURL(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	Log = true
 	filename := "AlterEgo.tap.zip"
 	expectedSize := 13933
 	f, _ := os.Create(filename)
@@ -47,8 +46,54 @@ func TestGet(t *testing.T) {
 	}
 }
 
+func TestGetAsynch(t *testing.T) {
+	filename := "AlterEgo.tap.zip"
+	expectedSize := 13933
+	f, _ := os.Create(filename)
+
+	transfer, err := GetAsynch("ftp.worldofspectrum.org/pub/sinclair/games/a/AlterEgo.tap.zip", f)
+	if err != nil {
+		t.Error("GetAsync should not return error")
+	}
+	if status := <-transfer.Status; status != STARTED {
+		t.Error("Status should be STARTED")
+	}
+	if status := <-transfer.Status; status != COMPLETED {
+		t.Error("Status should be COMPLETED")
+	}
+	if fileInfo, err := os.Stat(filename); err != nil {
+		t.Errorf("AlterEgo.tap.zip has not been downloaded", err)
+	} else if fileInfo.Size != 13933 {
+		t.Errorf("AlterEgo.tap.zip has the wrong expected size %d", expectedSize)
+	} else {
+		os.Remove(filename)
+	}
+}
+
+func TestGetAsynchAbort(t *testing.T) {
+	filename := "ubuntu-11.04-desktop-i386.iso"
+	f, _ := os.Create(filename)
+
+	transfer, err := GetAsynch("ftp.ussg.iu.edu/linux/ubuntu-releases/natty/ubuntu-11.04-desktop-i386.iso", f)
+	if err != nil {
+		t.Error("GetAsync should not return error")
+	}
+	if status := <-transfer.Status; status != STARTED {
+		t.Error("Status should be STARTED")
+	}
+
+	transfer.Control <- ABORT
+
+	if status := <-transfer.Status; status != ABORTED {
+		t.Error("Status should be ABORTED but is %d", status)
+	}
+	if fileInfo, _ := os.Stat(filename); fileInfo.Size > 100000000 {
+		t.Errorf("The iso image size should be < 100MB but is %d", fileInfo.Size)
+	} 
+	os.Remove(filename)
+}
+
 func TestErrorHandling(t *testing.T) {
-	Log = true
 	if err := Get("doesntexist/pub/sinclair/games/a/b.tap.zip", nil); err == nil {
 		t.Error("Should fail")
 	}
