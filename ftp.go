@@ -18,6 +18,7 @@ const (
 	// Status
 	STARTED = iota
 	COMPLETED
+	ERROR
 	ABORTED
 
 	// Control
@@ -188,6 +189,7 @@ func writeToFile(conn net.Conn, w io.Writer, statusCh, controlCh chan int, errCh
 			bytesRead, err := conn.Read(buf)
 			if bytesRead > 0 {
 				if _, err := w.Write(buf[0:bytesRead]); err != nil {
+					statusCh <- ERROR
 					errCh <- err
 				}
 			}
@@ -286,6 +288,17 @@ func Get(url string, w io.Writer) os.Error {
 // Fetch a file from an FTP server and return a Transfer object in
 // order to control the transfer. The transfer process is
 // asynchronous.
+// The function spawns the fetching routine but doesn't wait for
+// the transfer to finish. It returns a Transfer object in
+// order to control the transfer status through channels.
+//
+// The transfer state diagram is:
+// STARTED --> COMPLETED
+//         |
+//         --> ABORTED
+//         |
+//         --> ERROR (in this case you should drain the Error channel)
+//
 // url is the complete URL of the FTP server without the scheme part,
 // ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface

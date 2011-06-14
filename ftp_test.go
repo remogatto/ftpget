@@ -56,7 +56,7 @@ func TestGetAsynch(t *testing.T) {
 		t.Error("GetAsync should not return error")
 	}
 	if status := <-transfer.Status; status != STARTED {
-		t.Error("Status should be STARTED")
+		t.Errorf("Status should be STARTED but is %d", status)
 	}
 	if status := <-transfer.Status; status != COMPLETED {
 		t.Error("Status should be COMPLETED")

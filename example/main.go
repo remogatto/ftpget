@@ -56,9 +56,14 @@ func main() {
 			for i, t := range transfers {
 				if <-t.Status == ftp.STARTED {
 					log.Printf("Start download of '%s'", filenames[i])
-				}
-				if <-t.Status == ftp.COMPLETED {
-					log.Printf("Download of '%s' completed", filenames[i])
+					if <-t.Status == ftp.COMPLETED {
+						log.Printf("Download of '%s' completed", filenames[i])
+					} else if <-t.Status == ftp.ERROR {
+						log.Printf("An error occurred during the download of '%s'", filenames[i])
+						os.Exit(-1)
+					} else {
+						panic(os.NewError("Unknown transfer status"))
+					}
 				}
 			}
 		}
