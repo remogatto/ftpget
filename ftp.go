@@ -277,8 +277,7 @@ func get(url string, w io.Writer, async bool) (*Transfer, os.Error) {
 }
 
 // Fetch a file from an FTP server. The transfer process is synchronous.
-// url is the complete URL of the FTP server without the scheme part,
-// ex: ftp.worldofspectrum.org/a/abc.zip
+// url is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
 func Get(url string, w io.Writer) os.Error {
 	_, err := get(url, w, false)
@@ -299,8 +298,7 @@ func Get(url string, w io.Writer) os.Error {
 //         |
 //         --> ERROR (in this case you should drain the Error channel)
 //
-// url is the complete URL of the FTP server without the scheme part,
-// ex: ftp.worldofspectrum.org/a/abc.zip
+// url is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
 func GetAsync(url string, w io.Writer) (*Transfer, os.Error) {
 	return get(url, w, true)

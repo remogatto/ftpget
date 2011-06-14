@@ -31,7 +31,7 @@ func main() {
 	}
 	if url := flag.Arg(0); url != "" {
 		if !*async {
-			if f, err := os.Create(path.Base("ftp://"+flag.Arg(0))); err != nil {
+			if f, err := os.Create(path.Base("ftp://" + flag.Arg(0))); err != nil {
 				panic(err)
 			} else {
 				ftp.Get(flag.Arg(0), f)
