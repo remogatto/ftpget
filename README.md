@@ -37,11 +37,11 @@ func main() {
 	} else {
 		// Control the transfer status and errors.
 		// The transfer state diagram is:
-		// STARTED --> COMPLETED
+		// STARTED --+ COMPLETED
 		//         |
-		//         --> ABORTED
+		//         --+ ABORTED
 		//         |
-		//         --> ERROR (in this case you should drain the Error channel)
+		//         --+ ERROR (in this case you should drain the Error channel)
 		//
 		if status := <-transfer.Status; status == ftp.STARTED {
 			if status = <-transfer.Status; status == ftp.COMPLETED {
