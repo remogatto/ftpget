@@ -51,7 +51,7 @@ func TestGetAsynch(t *testing.T) {
 	expectedSize := 13933
 	f, _ := os.Create(filename)
 
-	transfer, err := GetAsynch("ftp.worldofspectrum.org/pub/sinclair/games/a/AlterEgo.tap.zip", f)
+	transfer, err := GetAsync("ftp.worldofspectrum.org/pub/sinclair/games/a/AlterEgo.tap.zip", f)
 	if err != nil {
 		t.Error("GetAsync should not return error")
 	}
@@ -74,7 +74,7 @@ func TestGetAsynchAbort(t *testing.T) {
 	filename := "ubuntu-11.04-desktop-i386.iso"
 	f, _ := os.Create(filename)
 
-	transfer, err := GetAsynch("ftp.ussg.iu.edu/linux/ubuntu-releases/natty/ubuntu-11.04-desktop-i386.iso", f)
+	transfer, err := GetAsync("ftp.ussg.iu.edu/linux/ubuntu-releases/natty/ubuntu-11.04-desktop-i386.iso", f)
 	if err != nil {
 		t.Error("GetAsync should not return error")
 	}
@@ -89,7 +89,7 @@ func TestGetAsynchAbort(t *testing.T) {
 	}
 	if fileInfo, _ := os.Stat(filename); fileInfo.Size > 100000000 {
 		t.Errorf("The iso image size should be < 100MB but is %d", fileInfo.Size)
-	} 
+	}
 	os.Remove(filename)
 }
 

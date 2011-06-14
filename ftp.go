@@ -26,17 +26,17 @@ const (
 
 var (
 	DefaultPort = 21
-	Log = false
+	Log         = false
 )
 
 type Transfer struct {
-	Status chan int
+	Status  chan int
 	Control chan int
-	Error chan os.Error
+	Error   chan os.Error
 }
 
 type Error struct {
-	Code int
+	Code    int
 	Message string
 }
 
@@ -49,7 +49,7 @@ type response struct {
 	message   string
 	raw       string
 	multiline bool
-	err os.Error
+	err       os.Error
 }
 
 type command struct {
@@ -73,18 +73,18 @@ func (err *Error) String() string {
 
 func parseResponse(r *bufio.Reader) *response {
 	var (
-		code int
-		message string
-		raw string
+		code      int
+		message   string
+		raw       string
 		multiline bool
-		err os.Error
+		err       os.Error
 	)
 	if raw, err = r.ReadString('\n'); err != nil {
 		return &response{err: err}
 	} else {
 		if code, err = strconv.Atoi(raw[:3]); err != nil {
- 			return &response{err: err}
-		} 
+			return &response{err: err}
+		}
 		message = raw[4 : len(raw)-2]
 		if raw[3 : len(raw)-2][0] == '-' {
 			multiline = true
@@ -96,7 +96,7 @@ func parseResponse(r *bufio.Reader) *response {
 func parseURL(url string) (*parsedURL, os.Error) {
 	var (
 		urlWithScheme *http.URL
-		parsedURL *parsedURL = new(parsedURL)
+		parsedURL     *parsedURL = new(parsedURL)
 		err           os.Error
 	)
 	if urlWithScheme, err = http.ParseURL("ftp://" + url); err != nil {
@@ -178,7 +178,7 @@ func writeToFile(conn net.Conn, w io.Writer, statusCh, controlCh chan int, errCh
 	statusCh <- STARTED
 	for {
 		select {
-		case ctrl := <- controlCh:
+		case ctrl := <-controlCh:
 			switch ctrl {
 			case ABORT:
 				statusCh <- ABORTED
@@ -217,13 +217,23 @@ func sendCommand(conn net.Conn, cmd string, code int) (*response, os.Error) {
 }
 
 func sendCommandSequence(conn net.Conn, parsedURL *parsedURL, w io.Writer) (net.Conn, os.Error) {
-	if _, err := sendCommand(conn, "connect", 220); err != nil { return nil, err }
-	if _, err := sendCommand(conn, "USER anonymous", 331); err != nil { return nil, err }
-	if _, err := sendCommand(conn, "PASS ftpget@-", 230); err != nil { return nil, err }
-	if _, err := sendCommand(conn, "CWD "+parsedURL.path, 250); err != nil { return nil, err }
-	if _, err := sendCommand(conn, "TYPE I", 200); err != nil { return nil, err }
-	if response, err := sendCommand(conn, "PASV", 227); err != nil { 
-		return nil, err 
+	if _, err := sendCommand(conn, "connect", 220); err != nil {
+		return nil, err
+	}
+	if _, err := sendCommand(conn, "USER anonymous", 331); err != nil {
+		return nil, err
+	}
+	if _, err := sendCommand(conn, "PASS ftpget@-", 230); err != nil {
+		return nil, err
+	}
+	if _, err := sendCommand(conn, "CWD "+parsedURL.path, 250); err != nil {
+		return nil, err
+	}
+	if _, err := sendCommand(conn, "TYPE I", 200); err != nil {
+		return nil, err
+	}
+	if response, err := sendCommand(conn, "PASV", 227); err != nil {
+		return nil, err
 	} else {
 		retrAddr, _ := getIpPort(response.message)
 		if dataConn, err := connect(retrAddr); err != nil {
@@ -235,7 +245,7 @@ func sendCommandSequence(conn net.Conn, parsedURL *parsedURL, w io.Writer) (net.
 	return nil, nil
 }
 
-func get(url string, w io.Writer, asynch bool) (*Transfer, os.Error) {
+func get(url string, w io.Writer, async bool) (*Transfer, os.Error) {
 	statusCh, controlCh := make(chan int), make(chan int)
 	errCh := make(chan os.Error)
 	if parsedURL, err := parseURL(url); err != nil {
@@ -247,16 +257,16 @@ func get(url string, w io.Writer, asynch bool) (*Transfer, os.Error) {
 			if dataConn, err := sendCommandSequence(conn, parsedURL, w); err != nil {
 				return nil, err
 			} else {
-				if _, err = sendCommand(conn, "RETR "+parsedURL.filename, 150); err != nil { 
+				if _, err = sendCommand(conn, "RETR "+parsedURL.filename, 150); err != nil {
 					return nil, err
 				} else {
-					if asynch {
+					if async {
 						go writeToFile(dataConn, w, statusCh, controlCh, errCh)
 					} else {
 						_, err := io.Copy(w, dataConn)
 						return nil, err
 					}
-					
+
 				}
 			}
 		}
@@ -279,6 +289,6 @@ func Get(url string, w io.Writer) os.Error {
 // url is the complete URL of the FTP server without the scheme part,
 // ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
-func GetAsynch(url string, w io.Writer) (*Transfer, os.Error) {
+func GetAsync(url string, w io.Writer) (*Transfer, os.Error) {
 	return get(url, w, true)
 }
