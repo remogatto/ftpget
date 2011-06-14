@@ -5,7 +5,7 @@ lines of Go code.
 
 # Examples
 
-See the example in the [examples](https://github.com/remogatto/ftpget/tree/master/example) folder.
+See the examples in the [examples](https://github.com/remogatto/ftpget/tree/master/examples) folder.
 
 # Install
 
