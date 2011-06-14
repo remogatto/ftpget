@@ -172,28 +172,7 @@ func connect(addr string) (net.Conn, os.Error) {
 	return conn, nil
 }
 
-func writeToFile(conn net.Conn, w io.Writer) os.Error {
-	// Buffer for downloading and writing to file
-	bufLen := 1024
-	buf := make([]byte, bufLen)
-
-	// Read from the server and write the contents to a file
-	for {
-		bytesRead, err := conn.Read(buf)
-		if bytesRead > 0 {
-			_, err := w.Write(buf[0:bytesRead])
-			if err != nil {
-				return err
-			}
-			}
-		if err == os.EOF {
-			break
-		}
-	}
-	return nil
-}
-
-func writeToFileAsynch(conn net.Conn, w io.Writer, statusCh, controlCh chan int, errCh chan os.Error) {
+func writeToFile(conn net.Conn, w io.Writer, statusCh, controlCh chan int, errCh chan os.Error) {
 	bufLen := 1024
 	buf := make([]byte, bufLen)
 	statusCh <- STARTED
@@ -272,9 +251,10 @@ func get(url string, w io.Writer, asynch bool) (*Transfer, os.Error) {
 					return nil, err
 				} else {
 					if asynch {
-						go writeToFileAsynch(dataConn, w, statusCh, controlCh, errCh)
+						go writeToFile(dataConn, w, statusCh, controlCh, errCh)
 					} else {
-						writeToFile(dataConn, w)
+						_, err := io.Copy(w, dataConn)
+						return nil, err
 					}
 					
 				}
