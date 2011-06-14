@@ -36,13 +36,6 @@ func main() {
 		panic(err)
 	} else {
 		// Control the transfer status and errors.
-		// The transfer state diagram is:
-		// STARTED --+ COMPLETED
-		//         |
-		//         --+ ABORTED
-		//         |
-		//         --+ ERROR (in this case you should drain the Error channel)
-		//
 		if status := <-transfer.Status; status == ftp.STARTED {
 			if status = <-transfer.Status; status == ftp.COMPLETED {
 				fmt.Println("Transfer completed")
