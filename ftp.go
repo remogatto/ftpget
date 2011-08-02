@@ -103,7 +103,7 @@ func parseURL(url string) (*parsedURL, os.Error) {
 	if urlWithScheme, err = http.ParseURL("ftp://" + url); err != nil {
 		return nil, err
 	}
-	if len(strings.Split(urlWithScheme.Host, ":", -1)) != 2 {
+	if len(strings.Split(urlWithScheme.Host, ":")) != 2 {
 		port := strconv.Itoa(DefaultPort)
 		parsedURL.addr = urlWithScheme.Host + ":" + port
 	} else {
@@ -157,7 +157,7 @@ func getIpPort(resp string) (addr string, err os.Error) {
 		return "", os.NewError(msg)
 	}
 	ip := strings.Replace(match[1], ",", ".", -1)
-	octets := strings.Split(match[2], ",", 2)
+	octets := strings.SplitN(match[2], ",", 2)
 	firstOctet, _ := strconv.Atoui(octets[0])
 	secondOctet, _ := strconv.Atoui(octets[1])
 	port := firstOctet*256 + secondOctet
