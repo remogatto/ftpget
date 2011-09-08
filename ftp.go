@@ -1,17 +1,17 @@
 package ftp
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"os"
-	"http"
-	"strings"
-	"strconv"
-	"log"
-	"io"
-	"bufio"
-	"regexp"
 	"path"
+	"regexp"
+	"strconv"
+	"strings"
+	"url"
 )
 
 const (
@@ -94,13 +94,13 @@ func parseResponse(r *bufio.Reader) *response {
 	return &response{code, message, raw, multiline, nil}
 }
 
-func parseURL(url string) (*parsedURL, os.Error) {
+func parseURL(URL string) (*parsedURL, os.Error) {
 	var (
-		urlWithScheme *http.URL
+		urlWithScheme *url.URL
 		parsedURL     *parsedURL = new(parsedURL)
 		err           os.Error
 	)
-	if urlWithScheme, err = http.ParseURL("ftp://" + url); err != nil {
+	if urlWithScheme, err = url.Parse("ftp://" + URL); err != nil {
 		return nil, err
 	}
 	if len(strings.Split(urlWithScheme.Host, ":")) != 2 {
@@ -247,10 +247,10 @@ func sendCommandSequence(conn net.Conn, parsedURL *parsedURL, w io.Writer) (net.
 	return nil, nil
 }
 
-func get(url string, w io.Writer, async bool) (*Transfer, os.Error) {
+func get(URL string, w io.Writer, async bool) (*Transfer, os.Error) {
 	statusCh, controlCh := make(chan int), make(chan int)
 	errCh := make(chan os.Error)
-	if parsedURL, err := parseURL(url); err != nil {
+	if parsedURL, err := parseURL(URL); err != nil {
 		return nil, err
 	} else {
 		if conn, err := connect(parsedURL.addr); err != nil {
@@ -277,10 +277,10 @@ func get(url string, w io.Writer, async bool) (*Transfer, os.Error) {
 }
 
 // Fetch a file from an FTP server. The transfer process is synchronous.
-// url is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
+// URL is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
-func Get(url string, w io.Writer) os.Error {
-	_, err := get(url, w, false)
+func Get(URL string, w io.Writer) os.Error {
+	_, err := get(URL, w, false)
 	return err
 }
 
@@ -298,8 +298,8 @@ func Get(url string, w io.Writer) os.Error {
 //         |
 //         --> ERROR (in this case you should drain the Error channel)
 //
-// url is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
+// URL is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
-func GetAsync(url string, w io.Writer) (*Transfer, os.Error) {
-	return get(url, w, true)
+func GetAsync(URL string, w io.Writer) (*Transfer, os.Error) {
+	return get(URL, w, true)
 }
