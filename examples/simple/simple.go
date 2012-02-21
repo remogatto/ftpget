@@ -1,46 +1,72 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"github.com/remogatto/ftpget"
+	"log"
+	"os"
+	"path"
 )
 
 func main() {
+	log.SetFlags(0)
 	ftp.Log = true
-	f, _ := os.Create("EarthAttack.tap.zip")
 
 	// Synchronous file transfer
-	if err := ftp.Get("ftp.worldofspectrum.org/pub/sinclair/games/e/EarthAttack.tap.zip", f); err != nil {
-		panic(err)
-	} else {
-		fmt.Println("Transfer completed")
+	{
+		const url = "ftp.worldofspectrum.org/pub/sinclair/games/e/EarthAttack.tap.zip"
+		log.Println("Retrieving", url)
+
+		f, err := os.Create(path.Base(url))
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+
+		err = ftp.Get(url, f)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Println("Transfer completed")
 	}
 
-	f, _ = os.Create("Eagle.tap.zip")
+	// Asynchronous file transfer
+	{
+		const url = "ftp.worldofspectrum.org/pub/sinclair/games/e/Eagle.tap.zip"
+		log.Println("Retrieving", url)
 
-	// ASynchronous file transfer
+		f, err := os.Create(path.Base(url))
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
 
-	// GetAsync spawns the fetching routine but doesn't wait for
-	// the transfer to finish. It returns a Transfer object in
-	// order to control the transfer status through channels.
-	if transfer, err := ftp.GetAsync("ftp.worldofspectrum.org/pub/sinclair/games/e/Eagle.tap.zip", f); err != nil {
-		panic(err)
-	} else {
+		// GetAsync spawns the fetching routine but doesn't wait for
+		// the transfer to finish. It returns a Transfer object in
+		// order to control the transfer status through channels.
+		transfer, err := ftp.GetAsync(url, f)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		// Control the transfer status and errors.
-		// The transfer state diagram is:
+		// The state diagram of the transfer is:
 		// STARTED --> COMPLETED
 		//         |
 		//         --> ABORTED
 		//         |
 		//         --> ERROR (in this case you should drain the Error channel)
 		//
-		if status := <-transfer.Status; status == ftp.STARTED {
-			if status = <-transfer.Status; status == ftp.COMPLETED {
-				fmt.Println("Transfer completed")
-			} else if status == ftp.ERROR {
-				panic(<-transfer.Error)
-			} else {
+		switch <-transfer.Status {
+		case ftp.STARTED:
+			switch <-transfer.Status {
+			case ftp.COMPLETED:
+				log.Println("Transfer completed")
+			case ftp.ABORTED:
+				log.Println("Transfer aborted")
+			case ftp.ERROR:
+				log.Fatal(<-transfer.Error)
+			default:
 				panic("Unknown status")
 			}
 		}
