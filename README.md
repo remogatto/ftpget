@@ -1,21 +1,22 @@
 # What's that?
 
-<tt>ftpget</tt> is a simple ftp fetcher library written in just ~300
-lines of Go code.
+<tt>ftpget</tt> is a simple ftp fetcher library written in Go.
+
+# Installation
+
+    go get -v github.com/remogatto/ftpget
+    go install -v github.com/remogatto/ftpget/cmd/...
 
 # Examples
 
-See the examples in the [examples](https://github.com/remogatto/ftpget/tree/master/examples) folder.
+    ftpget -verbose ftp.gnu.org/gnu/bash/bash-4.2.tar.gz
 
-# Install
+Also see the [examples](https://github.com/remogatto/ftpget/tree/master/examples) folder.
 
-<pre>
-goinstall github.com/remogatto/ftpget
-</pre>
 
 # License
 
-opyright (c) 2011 Andrea Fazzi
+Copyright (c) 2011 Andrea Fazzi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

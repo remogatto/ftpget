@@ -1,6 +1,2 @@
-*~
-*.out
-_test*
-_obj*
-*.[568]
-
+ftpget
+simple
