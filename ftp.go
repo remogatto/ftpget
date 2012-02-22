@@ -2,38 +2,42 @@ package ftp
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
-	"os"
+	"net/url"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
-	"url"
 )
 
+type Status int
+type Control int
+
+// Status
 const (
-	// Status
-	STARTED = iota
+	STARTED Status = iota
 	COMPLETED
 	ERROR
 	ABORTED
-
-	// Control
-	ABORT
 )
 
-var (
-	DefaultPort = 21
-	Log         = false
+// Control
+const (
+	ABORT Control = iota
 )
+
+const DefaultPort = 21
+
+var Log = false
 
 type Transfer struct {
-	Status  chan int
-	Control chan int
-	Error   chan os.Error
+	Status  <-chan Status
+	Control chan<- Control
+	Error   <-chan error
 }
 
 type Error struct {
@@ -50,25 +54,25 @@ type response struct {
 	message   string
 	raw       string
 	multiline bool
-	err       os.Error
+	err       error
 }
 
 type command struct {
-	conn     net.Conn
-	cmd      string
-	code     int
-	response *response
+	conn      net.Conn
+	cmd       string
+	termCodes []int
+	response  *response
 }
 
-func (*command) newCommand(conn net.Conn, cmd string, code int) *command {
-	return &command{conn, cmd, code, new(response)}
+func (*command) newCommand(conn net.Conn, cmd string, termCodes []int) *command {
+	return &command{conn, cmd, termCodes, new(response)}
 }
 
 func (response *response) String() string {
 	return fmt.Sprintf("[%03d] %s", response.code, response.message)
 }
 
-func (err *Error) String() string {
+func (err *Error) Error() string {
 	return fmt.Sprintf("[%03d] %s", err.Code, err.Message)
 }
 
@@ -78,7 +82,7 @@ func parseResponse(r *bufio.Reader) *response {
 		message   string
 		raw       string
 		multiline bool
-		err       os.Error
+		err       error
 	)
 	if raw, err = r.ReadString('\n'); err != nil {
 		return &response{err: err}
@@ -94,27 +98,34 @@ func parseResponse(r *bufio.Reader) *response {
 	return &response{code, message, raw, multiline, nil}
 }
 
-func parseURL(URL string) (*parsedURL, os.Error) {
-	var (
-		urlWithScheme *url.URL
-		parsedURL     *parsedURL = new(parsedURL)
-		err           os.Error
-	)
-	if urlWithScheme, err = url.Parse("ftp://" + URL); err != nil {
+func parseURL(URL string) (*parsedURL, error) {
+	var urlWithScheme *url.URL
+	var parsedURL parsedURL
+
+	urlWithScheme, err := url.Parse("ftp://" + URL)
+	if err != nil {
 		return nil, err
 	}
-	if len(strings.Split(urlWithScheme.Host, ":")) != 2 {
-		port := strconv.Itoa(DefaultPort)
-		parsedURL.addr = urlWithScheme.Host + ":" + port
-	} else {
-		parsedURL.addr = urlWithScheme.Host
+	if urlWithScheme.Path == "" {
+		return nil, fmt.Errorf("invalid URL: %s", URL)
 	}
+
+	parsedURL.addr = urlWithScheme.Host
+	if strings.Index(urlWithScheme.Host, ":") == -1 {
+		parsedURL.addr += ":" + strconv.Itoa(DefaultPort)
+	}
+
 	parsedURL.filename = path.Base(urlWithScheme.Path)
 	parsedURL.path = urlWithScheme.Path[:len(urlWithScheme.Path)-len(parsedURL.filename)]
-	return parsedURL, nil
+	return &parsedURL, nil
 }
 
-func readResponse(conn net.Conn, code int) *response {
+func readResponse(conn net.Conn, termCodes []int) *response {
+	isTermCode := make(map[int]bool)
+	for _, c := range termCodes {
+		isTermCode[c] = true
+	}
+
 	var response *response
 	reader := bufio.NewReader(conn)
 	for {
@@ -122,7 +133,7 @@ func readResponse(conn net.Conn, code int) *response {
 			return response
 		} else {
 			if !response.multiline {
-				if response.code == code {
+				if isTermCode[response.code] {
 					break
 				} else {
 					response.err = &Error{response.code, response.message}
@@ -135,17 +146,17 @@ func readResponse(conn net.Conn, code int) *response {
 }
 
 func request(cmd *command) *response {
-	var err os.Error
+	var err error
 	if cmd.cmd != "connect" {
 		_, err = cmd.conn.Write([]byte(cmd.cmd + "\r\n"))
 		if err != nil {
 			return &response{err: err}
 		}
 	}
-	return readResponse(cmd.conn, cmd.code)
+	return readResponse(cmd.conn, cmd.termCodes)
 }
 
-func getIpPort(resp string) (addr string, err os.Error) {
+func getIpPort(resp string) (addr string, err error) {
 	portRegex := "([0-9]+,[0-9]+,[0-9]+,[0-9]+),([0-9]+,[0-9]+)"
 	re, err := regexp.Compile(portRegex)
 	if err != nil {
@@ -154,18 +165,18 @@ func getIpPort(resp string) (addr string, err os.Error) {
 	match := re.FindStringSubmatch(resp)
 	if len(match) != 3 {
 		msg := "Cannot handle server response: " + resp
-		return "", os.NewError(msg)
+		return "", errors.New(msg)
 	}
 	ip := strings.Replace(match[1], ",", ".", -1)
 	octets := strings.SplitN(match[2], ",", 2)
-	firstOctet, _ := strconv.Atoui(octets[0])
-	secondOctet, _ := strconv.Atoui(octets[1])
+	firstOctet, _ := strconv.ParseUint(octets[0], 10, 0)
+	secondOctet, _ := strconv.ParseUint(octets[1], 10, 0)
 	port := firstOctet*256 + secondOctet
-	addr = ip + ":" + strconv.Uitoa(port)
+	addr = ip + ":" + strconv.FormatUint(uint64(port), 10)
 	return addr, nil
 }
 
-func connect(addr string) (net.Conn, os.Error) {
+func connect(addr string) (net.Conn, error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
@@ -173,42 +184,51 @@ func connect(addr string) (net.Conn, os.Error) {
 	return conn, nil
 }
 
-func writeToFile(conn net.Conn, w io.Writer, statusCh, controlCh chan int, errCh chan os.Error) {
-	bufLen := 1024
+func writeToFile(conn net.Conn, w io.Writer, statusCh chan Status, controlCh chan Control, errCh chan error) {
+	bufLen := 32 * 1024
 	buf := make([]byte, bufLen)
 	statusCh <- STARTED
+loop:
 	for {
 		select {
 		case ctrl := <-controlCh:
 			switch ctrl {
 			case ABORT:
 				statusCh <- ABORTED
-				break
+				break loop
 			}
 		default:
 			bytesRead, err := conn.Read(buf)
 			if bytesRead > 0 {
-				if _, err := w.Write(buf[0:bytesRead]); err != nil {
+				if _, err2 := w.Write(buf[0:bytesRead]); err != nil {
 					statusCh <- ERROR
-					errCh <- err
+					errCh <- err2
+					break loop
 				}
 			}
-			if err == os.EOF {
+			if err == io.EOF {
 				statusCh <- COMPLETED
-				break
+				break loop
+			}
+			if err != nil {
+				statusCh <- ERROR
+				errCh <- err
+				break loop
 			}
 		}
 	}
+	close(statusCh)
+	close(errCh)
 }
 
-func sendCommand(conn net.Conn, cmd string, code int) (*response, os.Error) {
-	response := request(&command{conn, cmd, code, nil})
+func sendCommand(conn net.Conn, cmd string, termCodes ...int) (*response, error) {
+	response := request(&command{conn, cmd, termCodes, nil})
 	if Log {
 		log.Printf("==> %s", cmd)
 	}
 	if response.err != nil {
 		if Log {
-			log.Printf("<== %s", response.err)
+			log.Printf("<== ERROR %s", response.err)
 		}
 		return nil, response.err
 	}
@@ -218,58 +238,78 @@ func sendCommand(conn net.Conn, cmd string, code int) (*response, os.Error) {
 	return response, nil
 }
 
-func sendCommandSequence(conn net.Conn, parsedURL *parsedURL, w io.Writer) (net.Conn, os.Error) {
-	if _, err := sendCommand(conn, "connect", 220); err != nil {
+func sendCommandSequence(conn net.Conn, parsedURL *parsedURL, w io.Writer) (net.Conn, error) {
+	var r *response
+	var err error
+	if r, err = sendCommand(conn, "connect", 220); err != nil {
 		return nil, err
 	}
-	if _, err := sendCommand(conn, "USER anonymous", 331); err != nil {
+	if r, err = sendCommand(conn, "USER anonymous", 230, 331); err != nil {
 		return nil, err
 	}
-	if _, err := sendCommand(conn, "PASS ftpget@-", 230); err != nil {
-		return nil, err
-	}
-	if _, err := sendCommand(conn, "CWD "+parsedURL.path, 250); err != nil {
-		return nil, err
-	}
-	if _, err := sendCommand(conn, "TYPE I", 200); err != nil {
-		return nil, err
-	}
-	if response, err := sendCommand(conn, "PASV", 227); err != nil {
-		return nil, err
-	} else {
-		retrAddr, _ := getIpPort(response.message)
-		if dataConn, err := connect(retrAddr); err != nil {
+	if r.code == 331 {
+		if r, err = sendCommand(conn, "PASS ftpget@-", 230); err != nil {
 			return nil, err
-		} else {
-			return dataConn, nil
 		}
 	}
-	return nil, nil
+	if r.code != 230 {
+		return nil, fmt.Errorf("invalid response: %s", r.String())
+	}
+	if r, err = sendCommand(conn, "CWD "+parsedURL.path, 250); err != nil {
+		return nil, err
+	}
+	if r, err = sendCommand(conn, "TYPE I", 200); err != nil {
+		return nil, err
+	}
+	var response *response
+	if response, err = sendCommand(conn, "PASV", 227); err != nil {
+		return nil, err
+	}
+	retrAddr, err := getIpPort(response.message)
+	if err != nil {
+		return nil, err
+	}
+	dataConn, err := connect(retrAddr)
+	if err != nil {
+		return nil, err
+	}
+	return dataConn, nil
 }
 
-func get(URL string, w io.Writer, async bool) (*Transfer, os.Error) {
-	statusCh, controlCh := make(chan int), make(chan int)
-	errCh := make(chan os.Error)
-	if parsedURL, err := parseURL(URL); err != nil {
+func get(URL string, w io.Writer, async bool) (*Transfer, error) {
+	statusCh, controlCh := make(chan Status), make(chan Control)
+	errCh := make(chan error)
+
+	parsedURL, err := parseURL(URL)
+	if err != nil {
+		return nil, err
+	}
+
+	if conn, err := connect(parsedURL.addr); err != nil {
 		return nil, err
 	} else {
-		if conn, err := connect(parsedURL.addr); err != nil {
+		if dataConn, err := sendCommandSequence(conn, parsedURL, w); err != nil {
+			conn.Close()
 			return nil, err
 		} else {
-			if dataConn, err := sendCommandSequence(conn, parsedURL, w); err != nil {
+			if _, err = sendCommand(conn, "RETR "+parsedURL.filename, 150); err != nil {
+				dataConn.Close()
+				conn.Close()
 				return nil, err
 			} else {
-				if _, err = sendCommand(conn, "RETR "+parsedURL.filename, 150); err != nil {
-					return nil, err
+				if async {
+					go func() {
+						writeToFile(dataConn, w, statusCh, controlCh, errCh)
+						dataConn.Close()
+						conn.Close()
+					}()
 				} else {
-					if async {
-						go writeToFile(dataConn, w, statusCh, controlCh, errCh)
-					} else {
-						_, err := io.Copy(w, dataConn)
-						return nil, err
-					}
-
+					_, err := io.Copy(w, dataConn)
+					dataConn.Close()
+					conn.Close()
+					return nil, err
 				}
+
 			}
 		}
 	}
@@ -279,7 +319,7 @@ func get(URL string, w io.Writer, async bool) (*Transfer, os.Error) {
 // Fetch a file from an FTP server. The transfer process is synchronous.
 // URL is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
-func Get(URL string, w io.Writer) os.Error {
+func Get(URL string, w io.Writer) error {
 	_, err := get(URL, w, false)
 	return err
 }
@@ -300,6 +340,6 @@ func Get(URL string, w io.Writer) os.Error {
 //
 // URL is the complete URL of the FTP server without the scheme part, ex: ftp.worldofspectrum.org/a/abc.zip
 // w is an object that implements the io.Writer interface
-func GetAsync(URL string, w io.Writer) (*Transfer, os.Error) {
+func GetAsync(URL string, w io.Writer) (*Transfer, error) {
 	return get(URL, w, true)
 }
